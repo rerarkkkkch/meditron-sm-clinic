@@ -1,0 +1,16 @@
+# рабочие зависимости. нижние границы подняты до версий с исправленными уязвимостями
+# (python-multipart < 0.0.18 — DoS при разборе формы). Для сборки образа используйте lock-файл с хэшами:
+# pip-compile --generate-hashes -o requirements.lock requirements.txt && pip-audit -r requirements.lock
+fastapi>=0.115
+uvicorn>=0.30
+python-multipart>=0.0.18
+pyyaml>=6.0.1
+pymorphy3>=2.0.2
+pymorphy3-dicts-ru>=2.4
+rapidfuzz>=3.9
+pdfplumber>=0.11.5
+python-docx>=1.1     # протоколы МИС в .docx
+# второй контур (модели). Нужен, если ml.enabled: true в config/findings.yaml
+scikit-learn>=1.5
+scipy>=1.11
+joblib>=1.4

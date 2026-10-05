@@ -1,0 +1,2 @@
+# второй контур входит в requirements.txt (часть рабочей системы)
+-r requirements.txt

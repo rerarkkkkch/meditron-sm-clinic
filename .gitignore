@@ -1,0 +1,19 @@
+# база, секреты и результаты прогонов
+data/cm_route.db
+data/db/
+data/inbox/*
+!data/inbox/.gitkeep
+reports/*
+!reports/.gitkeep
+.env
+# локальное окружение и кэш
+__pycache__/
+.venv/
+venv/
+.pytest_cache/
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+Thumbs.db

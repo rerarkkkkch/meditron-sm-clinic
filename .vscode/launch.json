@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CM Route: демо",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "8000"],
+      "env": {"CM_ENV": "demo"},
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true
+    },
+    {
+      "name": "CM Route: автотесты",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q", "tests"],
+      "env": {"CM_ENV": "demo"},
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "CM Route: метрики на выданных протоколах",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/evaluate.py",
+      "args": ["data/real/protocols.jsonl"],
+      "env": {"CM_ENV": "demo"},
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

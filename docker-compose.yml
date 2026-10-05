@@ -1,0 +1,21 @@
+services:
+  cm-route:
+    build:
+      context: .
+      target: ${CM_TARGET:-prod}          # prod по умолчанию; для показа жюри: CM_TARGET=demo
+    ports:
+      - "127.0.0.1:8000:8000"             # только localhost; наружу — через nginx/caddy с TLS
+    env_file: .env                        # секреты в .env (в .gitignore), не в репозитории
+    environment:
+      CM_DB: /app/data/db/cm_route.db     # вынесено из строки sh -c
+      CM_PSEUDO_SALT: ${CM_PSEUDO_SALT:?задайте CM_PSEUDO_SALT в .env}
+    volumes:
+      - ./config:/app/config:ro           # только чтение
+      - ./data/db:/app/data/db            # перед первым запуском: sudo chown -R 10001:10001 data/
+      - ./data/inbox:/app/data/inbox
+    # command: убран — единственная команда запуска в Dockerfile
+    restart: unless-stopped               # упал — поднимется, напоминания не встанут
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

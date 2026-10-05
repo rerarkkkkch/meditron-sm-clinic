@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">                                     <!-- кодировка для русского текста -->
+<meta name="viewport" content="width=device-width, initial-scale=1">   <!-- адаптивность -->
+<title>Маршрут пациента — админ</title>                    <!-- заголовок вкладки -->
+<style>
+/* цвета вынесены в переменные — легко подогнать под фирменный стиль клиники */
+:root{--bg:#f4f7fa;--card:#fff;--ink:#1d2b36;--muted:#6b7a88;--line:#e2e8ef;--accent:#0a8f8f;--accent-ink:#fff;
+      --warn:#d98a00;--danger:#c8392b;--ok:#2e8b57;--mark:#fff2a8;--radius:12px}
+*{box-sizing:border-box}                                     /* размеры с учётом отступов */
+body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}   /* базовый шрифт */
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}   /* шапка */
+header h1{font-size:16px;margin:0 12px 0 0}                  /* название */
+nav button,.btn{border:1px solid var(--line);background:var(--card);padding:7px 12px;border-radius:8px;cursor:pointer;font:inherit;color:inherit}   /* кнопки */
+nav button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}   /* активная вкладка */
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}   /* главная кнопка */
+.btn.danger{color:var(--danger);border-color:var(--danger)}  /* опасная кнопка */
+.btn.small{padding:4px 8px;font-size:12px}                   /* маленькая кнопка */
+.clock{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}   /* блок модельного времени */
+.bell{position:relative;font-size:18px;cursor:pointer}       /* колокольчик пушей */
+.bell b{position:absolute;top:-6px;right:-10px;background:var(--danger);color:#fff;border-radius:10px;font-size:11px;padding:0 5px}   /* счётчик */
+main{padding:16px 20px;max-width:1400px;margin:0 auto}      /* основная область */
+.grid{display:grid;grid-template-columns:380px 1fr;gap:16px} /* очередь + карточка */
+@media(max-width:900px){.grid{grid-template-columns:1fr}}    /* на телефоне — в столбик */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}   /* карточка */
+.card h3{margin:0 0 10px;font-size:15px}                     /* заголовок карточки */
+.item{padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--card)}   /* элемент очереди */
+.item.sel{border-color:var(--accent);box-shadow:0 0 0 2px #0a8f8f22}   /* выбранный элемент */
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;background:#eef3f7;color:var(--muted);margin:2px 4px 2px 0}   /* метка */
+.tag.urgent{background:#fde8e6;color:var(--danger)}          /* экстренно */
+.tag.pending{background:#fff4dc;color:var(--warn)}           /* ждёт верификации */
+.tag.ok{background:#e4f4ea;color:var(--ok)}                  /* хорошо */
+.muted{color:var(--muted);font-size:12px}                    /* второстепенный текст */
+.proto{white-space:pre-wrap;background:#fafcfd;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px}   /* текст протокола */
+mark{background:var(--mark);padding:0 2px;border-radius:3px} /* подсветка находки */
+table{width:100%;border-collapse:collapse;font-size:13px}    /* таблицы */
+th,td{text-align:left;padding:6px;border-bottom:1px solid var(--line);vertical-align:top}   /* ячейки */
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center} /* строка кнопок */
+.msg{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}   /* сообщение пациенту */
+/* выбор роли при запуске и кабинет пациента */
+.overlay{position:fixed;inset:0;background:#1d2b36cc;display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.overlay .box{background:var(--card);border-radius:16px;padding:24px;max-width:640px;width:100%}
+.roles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+@media(max-width:600px){.roles{grid-template-columns:1fr}}
+.role{border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;background:var(--card);text-align:left;font:inherit;color:inherit;display:flex;flex-direction:column;justify-content:flex-start}
+.role:hover{border-color:var(--accent);box-shadow:0 0 0 2px #0a8f8f22}
+.role b{display:block;font-size:16px;margin-bottom:4px}
+body.role-patient .admin-only{display:none!important}
+body:not(.role-patient) .patient-only{display:none!important}
+.calm{border-left:4px solid var(--accent);background:#e9f6f6;padding:12px 14px;border-radius:8px;margin:0 0 14px}
+.step{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
+.demo-note{border:1px dashed var(--muted);border-radius:10px;padding:10px 12px;color:var(--muted);font-size:13px}
+.err{color:var(--danger);font-size:12px}
+.tpl{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px}
+.phone{width:300px;margin:0 auto;border:10px solid #1d2b36;border-radius:34px;overflow:hidden;background:#1d2b36}
+.lock{background:linear-gradient(160deg,#0a8f8f,#1d4f6b);color:#fff;padding:18px 12px 14px;min-height:360px}
+.lock .time{text-align:center;font-size:44px;font-weight:300;line-height:1}
+.lock .date{text-align:center;font-size:13px;opacity:.85;margin:4px 0 14px}
+.push{background:#ffffffe6;color:var(--ink);border-radius:14px;padding:8px 10px;margin:8px 0;font-size:12.5px}
+.push .app{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:2px}
+.sms{background:#fff;padding:10px 12px;min-height:160px}
+.sms .bubble{background:#eef3f7;border-radius:14px 14px 14px 4px;padding:7px 10px;margin:6px 30px 6px 0;font-size:12.5px}
+.banner{border-left:4px solid var(--warn);background:#fff8e6;padding:8px 10px;border-radius:6px;margin:6px 0}   /* баннер для МИС */
+.toast{position:fixed;right:16px;bottom:16px;max-width:360px;display:flex;flex-direction:column;gap:8px;z-index:9}   /* всплывающие пуши */
+.toast div{background:#1d2b36;color:#fff;padding:10px 12px;border-radius:10px;font-size:13px;box-shadow:0 4px 14px #0003}   /* один пуш */
+.bar{height:22px;background:var(--accent);border-radius:4px;color:#fff;font-size:12px;padding:2px 6px;white-space:nowrap}   /* полоса воронки */
+textarea,input,select{font:inherit;padding:7px;border:1px solid var(--line);border-radius:8px;width:100%}   /* поля ввода */
+.hidden{display:none}                                        /* скрыть */
+</style>
+</head>
+<body>
+<!-- выбор роли при запуске -->
+<div class="overlay hidden" id="roleBox"><div class="box">
+  <h2 style="margin:0 0 4px">Маршрут пациента</h2>
+  <div class="muted">Прототип: все интеграции — заглушки. Выберите, чей экран открыть.</div>
+  <div class="roles">
+    <button class="role" onclick="setRole('admin')"><b>Администратор</b>
+      <span class="muted">Очередь находок, проверка, словарь, сценарий уведомлений, дашборд.</span></button>
+    <button class="role" onclick="setRole('patient')"><b>Пациент</b>
+      <span class="muted">Личный кабинет (эмулятор): какие нейтральные уведомления приходят пациенту и как он записывается.</span></button>
+  </div>
+</div></div>
+
+<header>
+  <h1 class="admin-only">Маршрут пациента · панель администратора <span class="muted">(прототип, все интеграции — заглушки)</span></h1>
+  <h1 class="patient-only">Личный кабинет пациента <span class="muted">(эмулятор ЛК МИС, демо)</span></h1>
+  <nav class="admin-only">                                                      <!-- вкладки -->
+    <button data-tab="queue" class="on">Очередь</button>
+    <button data-tab="upload">Загрузить протокол</button>
+    <button data-tab="dash">Дашборд</button>
+    <button data-tab="audit">Журнал</button>
+    <button data-tab="dict">Словарь</button>
+    <button data-tab="settings">Настройки</button>
+  </nav>
+  <div class="clock">                                        <!-- модельное время -->
+    <span class="muted">Модельное время:</span> <b id="now">—</b>
+    <button class="btn small" onclick="adv(1)">+1 ч</button>
+    <button class="btn small" onclick="adv(24)">+24 ч</button>
+    <button class="btn small" onclick="adv(72)">+72 ч</button>
+    <button class="btn small" onclick="adv(168)">+7 д</button>
+    <button class="btn small" onclick="adv(336)">+14 д</button>
+    <button class="btn small" onclick="adv(720)">+30 д</button>
+    <button class="btn small admin-only" onclick="demo()">Демо-данные</button>
+    <span class="bell admin-only" title="Пуши администратору" onclick="showTab('queue')">🔔<b id="bellN">0</b></span>
+    <button class="btn small" onclick="chooseRole()" title="Администратор / пациент">Сменить роль</button>
+  </div>
+</header>
+
+<main>
+  <!-- очередь + карточка -->
+  <section id="tab-queue">
+    <div class="grid">
+      <div>
+        <div class="row" style="margin-bottom:8px">          <!-- фильтр очереди -->
+          <select id="flt" onchange="loadQueue()">
+            <option value="">Все маршруты</option>
+            <option value="escalated">Экстренные</option>
+            <option value="pending_verification">Ждут верификации</option>
+            <option value="notified">Уведомлены</option>
+            <option value="booked">Записаны</option>
+            <option value="visited">Дошли до врача</option>
+            <option value="no_show">Неявка</option>
+            <option value="rejected">Отклонены</option>
+            <option value="not_engaged">Не вовлечены</option>
+          </select>
+        </div>
+        <div id="queue"></div>                                <!-- список маршрутов -->
+      </div>
+      <div id="detail"><div class="card muted">Выберите маршрут слева или загрузите демо-данные (кнопка «Демо-данные»).</div></div>
+    </div>
+  </section>
+
+  <!-- загрузка протокола -->
+  <section id="tab-upload" class="hidden">
+    <div class="card">
+      <h3>Протокол как событие от МИС (protocol.signed)</h3>
+      <div class="row">
+        <input id="upPid" placeholder="ID протокола в МИС, напр. U-1001" style="max-width:220px">
+        <input id="upPat" placeholder="ID пациента в МИС" style="max-width:200px">
+        <input id="upStudy" placeholder="Тип исследования" value="УЗИ органов малого таза" style="max-width:260px">
+      </div>
+      <p><textarea id="upText" rows="8" placeholder="Вставьте текст протокола…"></textarea></p>
+      <div class="row">
+        <button class="btn primary" onclick="sendProtocol('protocol.signed')">Отправить (подписан)</button>
+        <button class="btn" onclick="sendProtocol('protocol.corrected')">Отправить исправление</button>
+        <button class="btn danger" onclick="sendProtocol('protocol.cancelled')">Аннулировать</button>
+        <button class="btn" onclick="sandbox()">Только проверить (песочница)</button>
+        <span class="muted">или файл PDF/TXT:</span> <input type="file" id="upFile" style="max-width:240px" onchange="uploadFile()">
+      </div>
+      <p class="muted">Автозагрузка: положите файл в папку <code>data/inbox/</code> — он обработается сам (имя файла «ПАЦИЕНТ__протокол.pdf»).</p>
+    </div>
+    <div id="upResult"></div>                                 <!-- результат анализа -->
+  </section>
+
+  <!-- дашборд -->
+  <section id="tab-dash" class="hidden"><div id="dash"></div></section>
+
+  <!-- журнал -->
+  <section id="tab-audit" class="hidden"><div class="card"><h3>Журнал: кто, что, когда, на каком основании</h3><div id="audit"></div></div></section>
+
+  <!-- словарь -->
+  <section id="tab-dict" class="hidden"><div id="dict"></div></section>
+
+  <!-- настройки: автоотправка и сценарий уведомлений -->
+  <section id="tab-settings" class="hidden"><div id="settings"></div><div id="scenario"></div></section>
+
+  <!-- личный кабинет пациента -->
+  <section id="tab-patient" class="hidden">
+    <div class="row" style="margin-bottom:12px">
+      <span class="muted">Пациент (псевдо-ID):</span>
+      <select id="patSel" style="max-width:320px" onchange="loadCabinet()"></select>
+    </div>
+    <div id="cabinet"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>                          <!-- всплывающие пуши -->
+
+<script>
+// вспомогательные функции
+const $ = s => document.querySelector(s);                     // короткий поиск элемента
+// токен API (в бою все эндпоинты закрыты). Хранится только до закрытия вкладки
+let TOKEN = null; try { TOKEN = sessionStorage.getItem("cm_token"); } catch (e) {}
+const AUTH = () => TOKEN ? {"Authorization": "Bearer " + TOKEN} : {};
+function askToken() { TOKEN = prompt("Токен доступа (CM_API_TOKEN):") || null; try { TOKEN && sessionStorage.setItem("cm_token", TOKEN); } catch (e) {} }
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));   // защита от HTML-инъекций
+const api = async (url, opt = {}) => {                        // запрос к нашему API
+  const r = await fetch(url, {headers: {"Content-Type": "application/json", ...AUTH()}, ...opt});   // отправляем
+  if (r.status === 401) askToken();                           // нет/неверный токен — спросить
+  if (!r.ok) { const t = await r.text(); toast("Ошибка: " + t); throw new Error(t); }   // ошибка — показываем
+  const ct = r.headers.get("content-type") || "";             // тип ответа
+  return ct.includes("json") ? r.json() : r.text();           // JSON или текст
+};
+const post = (url, body) => api(url, {method: "POST", body: JSON.stringify(body || {})});   // POST с JSON
+const put = (url, body) => api(url, {method: "PUT", body: JSON.stringify(body || {})});     // PUT с JSON
+const del = url => api(url, {method: "DELETE"});                                            // DELETE
+const fmtT = iso => iso ? iso.replace("T", " ").slice(0, 16) : "—";   // формат даты-времени
+let current = null;                                           // ID открытого маршрута
+let lastAdminPush = 0;                                        // последний показанный пуш админу
+
+function toast(text) {                                        // всплывающее уведомление
+  const d = document.createElement("div");                    // элемент
+  d.textContent = text;                                       // текст
+  $("#toast").appendChild(d);                                 // показываем
+  setTimeout(() => d.remove(), 6000);                         // убираем через 6 сек
+}
+
+function showTab(name) {                                      // переключение вкладок
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));   // подсветка кнопки
+  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + name));   // показ секции
+  if (name === "dash") loadDash();                            // дашборд — обновить
+  if (name === "audit") loadAudit();                          // журнал — обновить
+  if (name === "dict") loadDict();                            // словарь — загрузить
+  if (name === "settings") { loadSettings(); loadScenario(); }   // автоотправка; сценарий уведомлений
+  if (name === "queue") loadQueue();                          // очередь — обновить
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));   // клики по вкладкам
+
+// модельное время и демо
+async function loadClock() { $("#now").textContent = fmtT((await api("/api/clock")).now); }   // показать время
+async function adv(h) {                                       // промотать время
+  const r = await post("/api/clock/advance?hours=" + h);      // запрос
+  toast(`Время +${h} ч. Выполнено шагов напоминаний: ${r.steps.length}`);   // что произошло
+  refresh();                                                  // обновить экран
+}
+async function demo() {                                       // загрузить демо
+  await post("/api/demo/reset");                              // очистить базу
+  const r = await post("/api/demo/load");                     // загрузить синтетику
+  lastAdminPush = 0;                                          // сбросить пуши
+  toast(`Загружено протоколов: ${r.loaded}`);                 // сообщение
+  current = null; refresh();                                  // обновить
+}
+
+// очередь
+const tagCls = s => s === "escalated" ? "urgent" : s === "pending_verification" ? "pending" : s === "visited" ? "ok" : "";   // цвет статуса
+async function loadQueue() {
+  const rows = await api("/api/routes" + ($("#flt").value ? "?status=" + $("#flt").value : ""));   // маршруты
+  $("#queue").innerHTML = rows.length ? rows.map(r => `
+    <div class="item ${r.id === current ? "sel" : ""}" onclick="openRoute(${r.id})">
+      <div class="row" style="justify-content:space-between"><b>${esc(String(r.patient).slice(0, 10))}</b><span class="tag ${tagCls(r.status)}">${esc(r.status_label)}</span></div>
+      <div>${esc(r.findings.map(f => f.name).join(", "))}</div>
+      <div class="muted">${esc(r.study)} · → ${esc(r.specialist)} · приоритет ${r.priority} · срок до ${esc(r.due_date)}</div>
+    </div>`).join("") : '<div class="card muted">Пока пусто</div>';   // карточки очереди
+}
+
+// карточка маршрута
+function highlight(text, spans) {                             // подсветка находок в тексте протокола
+  spans = spans.slice().sort((a, b) => a.start - b.start);    // сортируем фрагменты
+  let out = "", pos = 0;                                      // результат и текущая позиция
+  for (const s of spans) {                                    // каждый фрагмент
+    if (s.start < pos) continue;                              // пересекается с предыдущим — пропускаем
+    out += esc(text.slice(pos, s.start)) + `<mark title="${esc(s.rule)}">${esc(text.slice(s.start, s.end))}</mark>`;   // текст + подсветка
+    pos = s.end;                                              // сдвигаем позицию
+  }
+  return out + esc(text.slice(pos));                          // хвост текста
+}
+
+async function openRoute(id) {
+  current = id;                                               // запоминаем открытый маршрут
+  const d = await api("/api/routes/" + id);                   // все данные карточки
+  const r = d.route, p = d.protocol, ex = p.extraction;       // короткие имена
+  const spans = r.findings.flatMap(f => f.evidence);          // все доказательства
+  const pmsgs = d.notifications.filter(n => n.kind === "patient");   // сообщения пациенту — простым списком
+  const final = ["visited", "external", "declined", "rejected", "not_engaged", "closed"].includes(r.status);   // маршрут завершён?
+  $("#detail").innerHTML = `
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3>${esc(String(r.patient).slice(0, 10))} · ${esc(p.study)} от ${esc(p.study_date)}</h3>
+      <span class="tag ${tagCls(r.status)}">${esc(r.status_label)}</span>
+    </div>
+    <div class="row">
+      <span class="tag">→ ${esc(d.route_cfg.specialist)}</span>
+      <span class="tag">срок до ${esc(r.due_date)}</span>
+      <span class="tag">${esc(d.route_cfg.department || "")}</span>
+      <span class="tag ${r.verification.startsWith("совпадает") ? "ok" : "pending"}">${esc(r.verification)}</span>
+    </div>
+    <p class="muted">Система не ставит диагноз: она отмечает отклонение и предлагает маршрут. Решение — за врачом/администратором.</p>
+
+    <h3>Находки (почему сработала система)</h3>
+    <table><tr><th>Находка</th><th>Фрагмент</th><th>Правило</th><th>Атрибуты</th><th>Увер.</th></tr>
+    ${r.findings.flatMap(f => f.evidence.map(e => `<tr>
+      <td><b>${esc(f.name)}</b>${f.needs_review ? '<br><span class="tag pending">проверить</span>' : ""}</td>
+      <td>«${esc(e.quote)}»${e.flags.map(x => `<div class="muted">⚠ ${esc(x)}</div>`).join("")}
+        <div><button class="btn small" title="Слово рядом с находкой, при котором её не считать" onclick="addExclPrompt('${esc(f.id)}')">＋ исключение</button></div></td>
+      <td class="muted">${esc(e.rule)}</td>
+      <td>${esc(Object.entries(e.attributes).map(([k, v]) => k + "=" + v).join(", ") || "—")}</td>
+      <td>${e.confidence}</td></tr>`)).join("")}
+    </table>
+    ${d.route_cfg.possible_next ? `<p class="muted">Возможный дальнейший шаг (решает врач): ${esc(d.route_cfg.possible_next.join(", "))}</p>` : ""}
+
+    <h3>Протокол (обезличенный)</h3>
+    <div class="proto">${highlight(p.text, spans)}</div>
+    ${ex.suppressed.length ? `<p><b>Не сработало и почему:</b></p><ul>${ex.suppressed.map(s => `<li>${esc(s.name)}: «${esc(s.quote)}» — <i>${esc(s.reason)}</i></li>`).join("")}</ul>` : ""}
+
+    <h3>Действия</h3>
+    <div class="row">
+      ${r.status === "escalated" && !r.acked_at ? `<button class="btn primary" onclick="act('ack')">Принято в работу (экстренно)</button>` : ""}
+      ${r.status === "pending_verification" ? `<button class="btn primary" onclick="act('verify')">✔ Подтвердить и уведомить пациента</button>
+        <button class="btn danger" onclick="act('reject', null, prompt('Почему ложное срабатывание?') || '')">✖ Ложное срабатывание</button>` : ""}
+      ${!final && r.status !== "pending_verification" ? `
+        ${d.slots.map(s => `<button class="btn small" onclick="act('book','${esc(s.label)}')">Записать: ${esc(s.label)}</button>`).join("")}
+        ${r.status === "booked" ? `<button class="btn primary" onclick="act('visit')">Приём состоялся</button>
+          <button class="btn" onclick="act('no_show')">Неявка</button><button class="btn" onclick="act('cancel')">Пациент отменил</button>` : ""}` : ""}
+      ${final ? '<span class="muted">Маршрут завершён.</span>' : ""}
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns:300px 1fr">
+    <div class="card"><h3>Сообщения пациенту</h3>
+      ${pmsgs.length ? `<table>${pmsgs.map(n => `<tr><td class="muted" style="white-space:nowrap">${fmtT(n.ts)}<br>${esc(CH[n.channel] || n.channel)}${n.status !== "sent" ? " · " + esc(n.status) : ""}</td><td>${esc(n.text)}</td></tr>`).join("")}</table>` : '<div class="muted">Пациенту ещё ничего не отправлено</div>'}
+      <div class="row" style="margin-top:8px"><button class="btn small" onclick="openCabinet('${esc(r.patient)}')">Открыть кабинет пациента →</button></div>
+    </div>
+    <div class="card"><h3>Баннер в МИС при следующем визите пациента</h3>
+      ${d.open_routes_banner.length ? d.open_routes_banner.map(b => `<div class="banner">${esc(b)}</div>`).join("") : '<div class="muted">Открытых маршрутов нет</div>'}
+      <h3 style="margin-top:14px">Журнал маршрута</h3>
+      <table>${d.audit.map(a => `<tr><td class="muted">${fmtT(a.ts)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="muted">${esc(a.details)}</td></tr>`).join("")}</table>
+    </div>
+  </div>`;
+  loadQueue();                                                // обновить выделение в очереди
+}
+
+const CH = {lk: "Личный кабинет", push: "Push", sms: "SMS"};   // подписи каналов
+async function act(action, slot = null, comment = "", actor = "admin") {   // действие по маршруту
+  await post(`/api/routes/${current}/action`, {action, slot, comment, actor});   // запрос
+  refresh();                                                  // обновить экран
+}
+
+// загрузка протокола
+const upEvent = type => ({                                    // собрать событие из формы
+  event_id: type + "-" + Date.now(),                          // уникальный ID события
+  type, protocol_id: $("#upPid").value || "U-" + Date.now(),  // ID протокола
+  patient_id: $("#upPat").value || "PATIENT-DEMO",            // ID пациента
+  study_type: $("#upStudy").value, text: $("#upText").value,  // тип и текст
+});
+function renderExtraction(ex, extra = "") {                   // показать результат анализа
+  $("#upResult").innerHTML = `<div class="card"><h3>${esc(ex.summary)}</h3>${extra}
+    ${ex.findings.map(f => `<div>✔ <b>${esc(f.name)}</b> (уверенность ${f.confidence}) — ${f.evidence.map(e => "«" + esc(e.quote) + "» · " + esc(e.rule) + (e.flags.length ? " · ⚠ " + esc(e.flags.join("; ")) : "")).join("<br>")}</div>`).join("")}
+    ${ex.suppressed.map(s => `<div class="muted">✖ ${esc(s.name)}: «${esc(s.quote)}» — ${esc(s.reason)}</div>`).join("")}
+    ${ex.clinician_recommended.length ? `<div class="muted">Врач в протоколе рекомендовал маршрут(ы): ${esc(ex.clinician_recommended.join(", "))}</div>` : ""}
+    <div class="muted">Версия словаря: ${esc(ex.dictionary_version)}</div></div>`;
+}
+async function sendProtocol(type) {                           // отправить событие
+  const ev = upEvent(type);                                   // событие
+  if (type !== "protocol.cancelled" && !ev.text.trim()) return toast("Вставьте текст протокола");   // проверка
+  if (type !== "protocol.signed" && !$("#upPid").value) return toast("Укажите ID протокола, который исправляем/аннулируем");   // проверка
+  const r = await post("/api/events", ev);                    // отправляем
+  if (r.extraction) renderExtraction(r.extraction, `<p class="muted">Протокол ${esc(r.protocol_id)} v${r.version}: создано маршрутов ${r.created.length}, обновлено ${r.updated.length}, закрыто ${r.closed.length}</p>`);   // результат
+  else $("#upResult").innerHTML = `<div class="card">${esc(JSON.stringify(r))}</div>`;   // ответ для аннулирования
+  refresh();                                                  // обновить
+}
+async function sandbox() { renderExtraction(await post("/api/analyze", {text: $("#upText").value}), '<p class="muted">Песочница: ничего не сохранено.</p>'); }   // только анализ
+async function uploadFile() {                                 // загрузить файл
+  const f = $("#upFile").files[0]; if (!f) return;            // файл
+  const fd = new FormData(); fd.append("file", f);            // форма
+  if ($("#upPat").value) fd.append("patient_id", $("#upPat").value);   // ID пациента
+  fd.append("study_type", $("#upStudy").value);               // тип исследования
+  const r = await fetch("/api/upload", {method: "POST", body: fd, headers: AUTH()}).then(x => x.json());   // отправляем
+  if (r.extraction) renderExtraction(r.extraction); else toast(JSON.stringify(r));   // результат
+  refresh();                                                  // обновить
+}
+
+// дашборд
+async function loadDash() {
+  const d = await api("/api/dashboard");                      // данные
+  const max = Math.max(1, ...d.funnel.map(f => f.value));     // максимум для ширины полос
+  const e = d.economics;                                      // экономика
+  const rub = n => n.toLocaleString("ru-RU") + " ₽";          // формат рублей
+  $("#dash").innerHTML = `
+  <div class="card"><h3>Воронка «находка → уведомление → запись → приём»</h3>
+    <table>${d.funnel.map(f => `<tr><td style="width:280px">${esc(f.step)}</td>
+      <td><div class="bar" style="width:${Math.max(4, 100 * f.value / max)}%">${f.value}${f.pct != null ? " · " + f.pct + "%" : ""}</div></td></tr>`).join("")}</table>
+    <p class="muted">Экстренных эскалаций: ${d.escalated} · Просрочен целевой срок: ${d.overdue} · Отклонено как ложные: ${d.rejected_false_positive}</p></div>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="card"><h3>Маршруты по статусам</h3><table>${Object.entries(d.by_status).filter(([, v]) => v).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("")}</table></div>
+    <div class="card"><h3>Находки по типам</h3><table>${Object.entries(d.by_finding).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("")}</table></div>
+  </div>
+  <div class="card"><h3>Экономический эффект на ${e.assumptions.studies} исследований (допущения — config/economics.yaml)</h3>
+    <table>
+      <tr><td>Исследований с находкой</td><td>${e.triggers}</td></tr>
+      <tr><td>Доходимость до врача: без системы → с системой</td><td>${e.assumptions.reach_specialist_without * 100}% → ${e.assumptions.reach_specialist_with * 100}%</td></tr>
+      <tr><td>Дополнительно дошли до врача</td><td>+${e.extra_patients_reached}</td></tr>
+      <tr><td>Дополнительные операции (клинические доли не меняем)</td><td>+${e.extra_surgeries}</td></tr>
+      <tr><td>Дополнительная выручка</td><td>${rub(e.extra_revenue_rub)}</td></tr>
+      <tr><td>Дополнительная маржа</td><td>${rub(e.extra_margin_rub)}</td></tr>
+      <tr><td>Экономия на ручном контроле</td><td>${rub(e.admin_savings_rub)}</td></tr>
+      <tr><td><b>Итого эффект</b></td><td><b>${rub(e.total_effect_rub)}</b></td></tr>
+    </table></div>`;
+}
+
+// журнал и словарь
+async function loadAudit() {
+  const rows = await api("/api/audit");                       // записи журнала
+  $("#audit").innerHTML = `<table><tr><th>Время</th><th>Кто</th><th>Действие</th><th>Маршрут</th><th>Протокол</th><th>Детали</th></tr>
+    ${rows.map(a => `<tr><td class="muted">${fmtT(a.ts)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td>${a.route_id ?? ""}</td><td>${esc(a.protocol_id ?? "")}</td><td class="muted">${esc(a.details)}</td></tr>`).join("")}</table>`;   // таблица
+}
+async function loadDict() {
+  const c = await api("/api/config");                         // настройки
+  const F = c.findings.findings, R = c.routes.routes;         // находки и маршруты
+  $("#dict").innerHTML = `<div id="dictMan"></div><div id="dictEx"></div><div class="card"><h3>Словарь v${esc(c.findings.version)} · матрица v${esc(c.routes.version)}</h3>
+    <p class="muted">Редактируется в файлах config/findings.yaml и config/routes.yaml — изменения подхватываются без перезапуска.</p>
+    <table><tr><th>Находка</th><th>Термины</th><th>«Что» + «где»</th><th>Условие / исключения</th><th>Маршрут</th></tr>
+    ${Object.entries(F).map(([k, f]) => `<tr><td><b>${esc(f.name)}</b><div class="muted">${esc(k)} · приоритет ${f.priority}${f.urgent ? " · ЭКСТРЕННО" : ""}</div></td>
+      <td>${esc((f.terms || []).join(", "))}${f.user_added ? ' <span class="tag pending">добавлена админом</span>' : ""}</td><td>${esc((f.what || []).join(", "))}${f.where ? " + [" + esc(f.where.join(", ")) + "]" : ""}</td>
+      <td>${esc(JSON.stringify(f.condition || ""))} ${esc((f.exclude || []).join(", "))}</td>
+      <td>${esc(R[f.route]?.specialist || f.route)} (${R[f.route]?.target_days ?? "?"} дн.)</td></tr>`).join("")}</table></div>`;   // таблица словаря
+  await loadManualDict();                                     // ручное добавление в словарь
+  await loadExclusions(F);                                    // исключения (в т.ч. добавленные админом)
+}
+
+// исключения, которые добавляет администратор
+async function loadExclusions(F) {
+  const ex = await api("/api/exclusions");                    // словарные + пользовательские
+  const opts = Object.entries(F).map(([k, f]) => `<option value="${esc(k)}">${esc(f.name)}${f.context_sensitive ? " (контекстное слово)" : ""}</option>`).join("");
+  const box = document.createElement("div"); box.className = "card";
+  box.innerHTML = `<h3>Исключения</h3>
+    <p class="muted">Если слово-исключение стоит рядом с находкой, находка не засчитывается (в «Не сработало и почему» будет видно, какое исключение помешало).
+    Пример: «Тромбоз вен» + исключение «аорта» — тромб в аневризме аорты больше не даёт экстренную тревогу. Изменения действуют сразу для новых протоколов.</p>
+    <div class="row">
+      <select id="exF" style="max-width:320px"><option value="*">— для всех находок —</option>${opts}</select>
+      <input id="exP" placeholder="слово или фраза, напр. аорта" style="max-width:260px">
+      <select id="exS" style="max-width:220px"><option value="sentence">во всём предложении</option><option value="clause">только между запятыми</option></select>
+      <button class="btn primary" onclick="addExcl()">Добавить исключение</button>
+    </div>
+    <table style="margin-top:10px"><tr><th>Находка</th><th>Исключение</th><th>Где действует</th><th>Кто добавил</th><th></th></tr>
+    ${ex.user.map(u => `<tr style="${u.active ? "" : "opacity:.5"}"><td>${esc(u.finding_id === "*" ? "все находки" : (F[u.finding_id]?.name || u.finding_id))}</td>
+      <td>«${esc(u.phrase)}»</td><td>${u.scope === "sentence" ? "предложение" : "между запятыми"}</td><td class="muted">${esc(u.added_by)} · ${fmtT(u.ts)}</td>
+      <td>${u.active ? `<button class="btn small danger" onclick="delExcl(${u.id})">выключить</button>` : "выключено"}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Пока нет исключений от администратора</td></tr>'}
+    ${Object.entries(ex.dictionary).filter(([, d]) => d.exclude.length).map(([k, d]) => `<tr><td>${esc(d.name)}${d.context_sensitive ? ' <span class="tag pending">контекстное слово</span>' : ""}</td>
+      <td>${esc(d.exclude.join(", "))}</td><td>${d.scope === "sentence" ? "предложение" : "между запятыми"}</td><td class="muted">словарь (YAML)</td><td></td></tr>`).join("")}
+    </table>`;
+  $("#dictEx").replaceChildren(box);
+}
+async function addExcl() {                                    // добавить из формы
+  const phrase = $("#exP").value.trim(); if (!phrase) return toast("Введите слово");
+  await post("/api/exclusions", {finding_id: $("#exF").value, phrase, scope: $("#exS").value});
+  toast("Исключение добавлено"); loadDict();
+}
+async function addExclPrompt(fid) {                           // добавить прямо из карточки находки
+  const phrase = prompt("Слово-исключение для этой находки (например, «аорта»). Находка не будет засчитываться, если это слово есть в том же предложении:");
+  if (!phrase || !phrase.trim()) return;
+  await post("/api/exclusions", {finding_id: fid, phrase: phrase.trim(), scope: "sentence"});
+  toast("Исключение добавлено. Действует для новых протоколов.");
+}
+async function delExcl(id) { await del("/api/exclusions/" + id); toast("Исключение выключено"); loadDict(); }
+
+// настройка автоотправки без проверки администратором
+let AS = null;                                                // настройка автоотправки (черновик)
+async function loadSettings() {
+  AS = await api("/api/settings/auto_send");
+  AS.rules = (AS.current.rules || []).map(r => ({...r}));
+  renderSettings();
+}
+function renderSettings() {
+  const c = AS.current, d = AS;
+  $("#settings").innerHTML = `<div class="card"><h3>Автоотправка пациенту без проверки администратором</h3>
+    <p class="muted">По умолчанию каждую находку проверяет администратор. Здесь можно разрешить отправлять пациенту
+    нейтральное сообщение сразу. <b>Экстренные находки и находки второго контура никогда не уходят пациенту автоматически.</b>
+    Администратор всё равно получает пуш о каждом маршруте и может отменить запись.</p>
+    ${Object.entries(d.modes).map(([k, label]) => `<label style="display:block;margin:6px 0"><input type="radio" name="am" value="${k}" ${c.mode === k ? "checked" : ""} style="width:auto" onchange="AS.current.mode=this.value;renderSettings()"> ${esc(label)}</label>`).join("")}
+    <div id="amRoutes" class="${c.mode === "selected" ? "" : "hidden"}" style="margin:6px 0 10px 24px">${Object.entries(d.routes).map(([k, name]) => `<label style="display:inline-block;margin-right:14px"><input type="checkbox" value="${k}" ${(c.routes || []).includes(k) ? "checked" : ""} style="width:auto" onchange="AS.current.routes=[...document.querySelectorAll('#amRoutes input:checked')].map(x=>x.value)"> ${esc(name)}</label>`).join("")}</div>
+    <div class="${c.mode === "rules" ? "" : "hidden"}" style="margin:6px 0 10px 24px">${rulesEditor()}</div>
+    <label style="display:block;margin:6px 0"><input type="checkbox" id="amSkip" ${c.skip_needs_review !== false ? "checked" : ""} style="width:auto" onchange="AS.current.skip_needs_review=this.checked">
+      Находки с пометкой «проверить» (опечатка, нет размера, «нельзя исключить», «вероятно ложное») всё равно ждут администратора (рекомендуется)</label>
+    <div class="row" style="margin-top:10px"><button class="btn primary" onclick="saveSettings()">Сохранить</button>
+      <button class="btn" onclick="simulate()">Проверить на текущих маршрутах</button>
+      <span class="muted">${c.changed_at ? "Изменено: " + fmtT(c.changed_at) + " (" + esc(c.changed_by) + ")" : "Сейчас действует значение из routes.yaml"}</span></div>
+    <div id="simRes"></div></div>`;
+}
+function rulesEditor() {                                      // свои сценарии: при каких условиях не ждать проверки
+  const F = AS.findings, R = AS.routes;
+  const chk = (i, field, val, label) => `<label style="display:inline-block;margin-right:10px"><input type="checkbox" style="width:auto" ${(AS.rules[i][field] || []).includes(val) ? "checked" : ""} onchange="ruleList(${i},'${field}',${JSON.stringify(val).replace(/"/g, "&quot;")},this.checked)"> ${esc(label)}</label>`;
+  return `<p class="muted">Маршрут уходит пациенту без проверки, если подходит хотя бы под одно включённое правило.
+    В правиле должны выполниться все условия. Пустое условие означает «любое значение».</p>
+    ${AS.rules.map((r, i) => `<div class="tpl">
+      <div class="row"><input value="${esc(r.name)}" placeholder="название правила" style="max-width:320px" oninput="AS.rules[${i}].name=this.value">
+        <label class="row" style="width:auto"><input type="checkbox" style="width:auto" ${r.active ? "checked" : ""} onchange="AS.rules[${i}].active=this.checked"> включено</label>
+        <button class="btn small danger" onclick="AS.rules.splice(${i},1);renderSettings()">удалить</button></div>
+      <div style="margin-top:6px"><span class="muted">Специалист:</span> ${Object.entries(R).map(([k, n]) => chk(i, "routes", k, n)).join("")}</div>
+      <div style="margin-top:6px"><span class="muted">Приоритет:</span> ${chk(i, "priorities", 1, "1 — высокий")}${chk(i, "priorities", 2, "2")}${chk(i, "priorities", 3, "3 — плановый")}</div>
+      <div class="row" style="margin-top:6px"><span class="muted">Только эти находки (Ctrl+клик):</span>
+        <select multiple size="4" style="max-width:420px" onchange="AS.rules[${i}].findings=[...this.selectedOptions].map(o=>o.value)">
+          ${Object.entries(F).map(([k, n]) => `<option value="${esc(k)}" ${(r.findings || []).includes(k) ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+      <div class="row" style="margin-top:6px">
+        <label class="row" style="width:auto">Уверенность не ниже <input type="number" min="0" max="1" step="0.05" value="${r.min_confidence || 0}" style="width:80px" oninput="AS.rules[${i}].min_confidence=+this.value"></label>
+        <label class="row" style="width:auto"><input type="checkbox" style="width:auto" ${r.require_clinician ? "checked" : ""} onchange="AS.rules[${i}].require_clinician=this.checked"> врач УЗИ сам рекомендовал этого специалиста</label>
+        <input value="${esc(r.study_contains || "")}" placeholder="тип исследования содержит, напр. щитовидн" style="max-width:280px" oninput="AS.rules[${i}].study_contains=this.value"></div>
+    </div>`).join("") || '<div class="muted">Правил пока нет</div>'}
+    <div class="row"><button class="btn small" onclick="addRule()">＋ правило</button></div>`;
+}
+function ruleList(i, field, val, on) { const r = AS.rules[i]; r[field] = (r[field] || []).filter(x => x !== val).concat(on ? [val] : []); }
+function addRule() {
+  AS.rules.push({name: "Плановые, врач УЗИ согласен", active: true, routes: [], findings: [], priorities: [3],
+                 min_confidence: 0.85, require_clinician: true, study_contains: ""});
+  renderSettings();
+}
+const asBody = () => ({mode: AS.current.mode, routes: AS.current.routes || [], skip_needs_review: AS.current.skip_needs_review !== false, rules: AS.rules});
+async function simulate() {
+  const r = await post("/api/settings/auto_send/simulate", asBody());
+  $("#simRes").innerHTML = `<div class="calm" style="margin-top:10px">Из ${r.total} плановых маршрутов в базе ушли бы пациенту сразу: <b>${r.auto}</b>;
+    остановлены проверкой («проверить», второй контур): ${r.blocked}; ждут администратора: ${r.manual}.</div>
+    ${r.examples.length ? `<table>${r.examples.map(e => `<tr><td>№${e.route_id}</td><td>${esc(e.findings.join(", "))}</td>
+      <td>${e.result === "auto" ? '<span class="tag ok">сразу пациенту</span>' : '<span class="tag pending">остановлено</span>'}</td><td class="muted">${esc(e.why || "")}</td></tr>`).join("")}</table>` : ""}`;
+}
+async function saveSettings() {
+  const b = asBody();
+  if (b.mode === "selected" && !b.routes.length) return toast("Отметьте хотя бы один маршрут");
+  if (b.mode !== "off" && !confirm("Пациенты будут получать сообщения без проверки администратором. Включить?")) return;
+  await put("/api/settings/auto_send", b);
+  toast("Настройка сохранена"); loadSettings();
+}
+
+// ручное добавление в словарь
+let DICT = null;                                              // словарь с сервера (находки, органы, маршруты)
+async function loadManualDict() {
+  DICT = await api("/api/dictionary");
+  const box = document.createElement("div"); box.className = "card"; box.id = "manualDict";
+  const F = DICT.findings;
+  box.innerHTML = `<h3>Ручное добавление в словарь</h3>
+    <p class="muted">Добавленное действует сразу для новых протоколов, хранится в базе (YAML не меняется) и пишется в журнал.
+    Выключенная запись остаётся в списке. Аббревиатуры пишите ЗАГЛАВНЫМИ (ЖП, ОБА) — они совпадают только буква в букву.</p>
+    <div class="row"><span class="muted">Что добавить:</span>
+      <select id="dK" style="max-width:300px" onchange="dictForm()">${Object.entries(DICT.kinds).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
+    <div class="row" style="margin-top:8px;align-items:flex-start"><span id="dForm" class="row" style="flex:1"></span>
+      <button class="btn primary" onclick="addDict()">Добавить в словарь</button></div>
+    <div id="dHint" class="muted" style="margin-top:6px"></div>
+    <table style="margin-top:10px"><tr><th>Что добавлено</th><th>К чему</th><th>Фраза</th><th>Кто добавил</th><th></th></tr>
+    ${DICT.user.map(u => `<tr style="${u.active ? "" : "opacity:.5"}"><td>${esc(DICT.kinds[u.kind] || u.kind)}</td>
+      <td>${esc(u.kind === "location" ? u.target : u.kind === "finding" ? (u.extra.name + " → " + (DICT.routes[u.extra.route] || u.extra.route) + (u.extra.urgent ? " · ЭКСТРЕННО" : "")) : (F[u.target]?.name || u.target))}</td>
+      <td>«${esc(u.phrase)}»</td><td class="muted">${esc(u.added_by)} · ${fmtT(u.ts)}</td>
+      <td>${u.active ? `<button class="btn small danger" onclick="delDict(${u.id})">выключить</button>` : "выключено"}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Пока нет ручных добавлений</td></tr>'}
+    </table>
+    <details style="margin-top:10px"><summary>Проверить на тексте (песочница, ничего не сохраняется)</summary>
+      <p><textarea id="dTest" rows="3" placeholder="Вставьте фразу из протокола…"></textarea></p>
+      <button class="btn small" onclick="testDict()">Проверить</button> <span id="dTestRes"></span></details>
+    <details style="margin-top:6px"><summary>Органы и их синонимы (${Object.keys(DICT.locations).length})</summary>
+      <table>${Object.entries(DICT.locations).map(([k, v]) => `<tr><td class="muted">${esc(k)}</td><td>${esc(v.join(", "))}</td></tr>`).join("")}</table></details>`;
+  $("#dictMan").replaceChildren(box);
+  dictForm();
+}
+function dictForm() {                                         // поля формы зависят от типа записи
+  const k = $("#dK").value, F = DICT.findings;
+  const fopts = Object.entries(F).filter(([, f]) => k !== "what" || (f.where || []).length)
+    .map(([id, f]) => `<option value="${esc(id)}">${esc(f.name)}${f.user_added ? " (админ)" : ""}</option>`).join("");
+  const lopts = Object.entries(DICT.locations).map(([id, v]) => `<option value="${esc(id)}">${esc(v[0])} (${esc(id)})</option>`).join("");
+  const ropts = Object.entries(DICT.routes).map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join("");
+  const hints = {
+    term: "Термин сам по себе означает находку, орган искать не нужно. Пример: «Аденомиоз» + «диффузный аденомиоз».",
+    what: "«Что» засчитывается, только если рядом назван орган этой находки. Пример: «Образование яичника» + «жидкостное включение».",
+    location: "Синоним органа: помогает правилу «ЧТО + ГДЕ» найти орган. Пример: орган «ovary» + «придатки».",
+    finding: "Новая находка: название для администратора, первый термин и маршрут. Пороги размеров для новых находок не задаются — при необходимости их добавляет программист в YAML.",
+  };
+  $("#dHint").textContent = hints[k];
+  $("#dForm").innerHTML = k === "location"
+    ? `<select id="dT" style="max-width:280px">${lopts}</select><input id="dP" placeholder="синоним органа" style="max-width:240px">`
+    : k === "finding"
+    ? `<input id="dN" placeholder="название, напр. Гемангиома печени" style="max-width:240px">
+       <input id="dP" placeholder="термин, напр. гемангиома" style="max-width:200px">
+       <select id="dR" style="max-width:220px">${ropts}</select>
+       <select id="dPr" style="max-width:150px"><option value="3">приоритет 3 (плановый)</option><option value="2">приоритет 2</option><option value="1">приоритет 1 (высокий)</option></select>
+       <label class="row" style="width:auto"><input type="checkbox" id="dU" style="width:auto"> экстренная</label>
+       <label style="width:100%" class="muted">Органы (необязательно; нужны, чтобы потом добавлять «что»; Ctrl+клик — несколько):
+         <select id="dW" multiple size="4" style="max-width:420px;display:block;margin-top:4px">${lopts}</select></label>`
+    : `<select id="dT" style="max-width:320px">${fopts}</select><input id="dP" placeholder="слово или фраза" style="max-width:240px">`;
+}
+async function addDict() {
+  const kind = $("#dK").value, phrase = ($("#dP").value || "").trim();
+  if (!phrase) return toast("Введите слово или фразу");
+  const body = {kind, phrase, target: $("#dT")?.value || ""};
+  if (kind === "finding") {
+    Object.assign(body, {name: $("#dN").value.trim(), route: $("#dR").value, priority: +$("#dPr").value, urgent: $("#dU").checked,
+                         where: [...$("#dW").selectedOptions].map(o => o.value)});
+    if (body.urgent && !confirm("Экстренная находка сразу уходит персоналу как тревога. Пациенту автоматически не пишем. Добавить?")) return;
+  }
+  await post("/api/dictionary", body);
+  toast("Добавлено в словарь. Действует для новых протоколов."); loadDict();
+}
+async function delDict(id) { await del("/api/dictionary/" + id); toast("Запись выключена"); loadDict(); }
+async function testDict() {
+  const ex = await post("/api/analyze", {text: $("#dTest").value});
+  $("#dTestRes").innerHTML = ex.findings.length ? ex.findings.map(f => `<span class="tag ok">${esc(f.name)}</span>`).join("")
+    : '<span class="muted">находок нет</span>' + ex.suppressed.map(s => `<div class="muted">✖ ${esc(s.name)} — ${esc(s.reason)}</div>`).join("");
+}
+
+// сценарий уведомлений пациента (Настройки)
+let SC = null, scTimer = null;                                // черновик сценария и таймер проверки
+const TPL_NAMES = {first_notice: "Первое сообщение (после подтверждения)", reminder_24h: "Напоминание 1", reminder_72h: "Напоминание 2",
+  final_soft: "Последнее мягкое напоминание", no_show: "После неявки", booked: "Подтверждение записи", call_script: "Скрипт звонка (для администратора)"};
+const ACT_NAMES = {patient_message: "Сообщение пациенту", admin_task: "Задача администратору", set_status: "Закрыть: «не вовлечён»"};
+async function loadScenario() {
+  const d = await api("/api/settings/scenario");
+  SC = {templates: d.templates, reminders: d.reminders, report: d.report, required: d.required, meta: d};
+  renderScenario();
+}
+function renderScenario() {
+  const keys = Object.keys(SC.templates);
+  const days = h => h >= 48 ? ` ≈ ${Math.round(h / 24)} дн.` : "";
+  $("#scenario").innerHTML = `<div class="card"><h3>Сценарий уведомлений пациента</h3>
+    <p class="muted">Что и когда получает пациент, если не записался. Правило: <b>не называем находку и не пугаем</b> —
+    только «плановая консультация», «незавершённый маршрут обследования». Тексты с медицинскими или тревожными словами
+    («киста», «срочно», «изменения», «отклонение»…) и тексты, в которых словарь находит находку, не сохраняются.
+    Подстановки: <code>{specialist}</code> — «врача-гинеколога» и т. п., <code>{slot}</code> — время записи.
+    Лестница отсчитывается от первого сообщения; шаги, которые уже прошли, повторно не выполняются.</p>
+    <h3>Лестница напоминаний</h3>
+    <table><tr><th>Через, ч</th><th>Действие</th><th>Текст</th><th>Каналы</th><th></th></tr>
+    ${SC.reminders.map((r, i) => `<tr>
+      <td><input type="number" min="1" max="2160" value="${r.after_hours}" style="max-width:90px" oninput="SC.reminders[${i}].after_hours=+this.value;scCheck()"><span class="muted">${days(r.after_hours)}</span></td>
+      <td><select onchange="scAct(${i},this.value)">${Object.entries(ACT_NAMES).map(([k, v]) => `<option value="${k}" ${r.action === k ? "selected" : ""}>${v}</option>`).join("")}</select></td>
+      <td>${r.action === "set_status" ? '<span class="muted">напоминания прекращаются</span>'
+          : `<select onchange="SC.reminders[${i}].template=this.value;scCheck()">${keys.map(k => `<option value="${k}" ${r.template === k ? "selected" : ""}>${esc(TPL_NAMES[k] || k)}</option>`).join("")}</select>`}</td>
+      <td>${r.action === "patient_message" ? ["lk", "push", "sms"].map(c => `<label style="margin-right:8px;white-space:nowrap"><input type="checkbox" style="width:auto" ${(r.channels || []).includes(c) ? "checked" : ""} onchange="scCh(${i},'${c}',this.checked)"> ${CH[c]}</label>`).join("") : ""}</td>
+      <td><button class="btn small danger" onclick="SC.reminders.splice(${i},1);renderScenario();scCheck()">убрать</button></td></tr>`).join("")}
+    </table>
+    <div class="row" style="margin:8px 0 16px"><button class="btn small" onclick="scAddStep()">＋ шаг</button></div>
+    <h3>Тексты</h3>
+    ${keys.map(k => { const rep = SC.report[k] || {issues: []}; return `<div class="tpl">
+      <div class="row" style="justify-content:space-between"><b>${esc(TPL_NAMES[k] || k)}</b>
+        <span><span class="tag ${rep.audience === "admin" ? "" : "ok"}">${rep.audience === "admin" ? "администратору" : "пациенту"}</span>
+        <span class="muted">${esc(k)}</span>
+        ${SC.required.includes(k) ? "" : `<button class="btn small danger" onclick="scDelTpl('${k}')">удалить</button>`}</span></div>
+      <textarea rows="2" oninput="SC.templates['${k}']=this.value;scCheck()">${esc(SC.templates[k])}</textarea>
+      <div id="rep-${k}">${scRep(k)}</div></div>`; }).join("")}
+    <div class="row"><button class="btn small" onclick="scAddTpl()">＋ свой текст</button></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" onclick="scSave()">Сохранить сценарий</button>
+      <button class="btn" onclick="scReset()">Вернуть как в routes.yaml</button>
+      <span class="muted">${SC.meta.changed_at ? "Изменено: " + fmtT(SC.meta.changed_at) + " (" + esc(SC.meta.changed_by) + ")" : "Сейчас действует сценарий из routes.yaml"}</span>
+    </div></div>
+    <div class="card"><h3>Так это увидит пациент</h3><div id="scPreview">${scPreview()}</div></div>`;
+}
+function scRep(k) {                                           // отчёт проверки одного текста
+  const rep = SC.report[k]; if (!rep) return "";
+  return (rep.issues.length ? `<div class="err">✖ Не нейтрально: ${esc(rep.issues.join(", "))}</div>` : (rep.audience === "patient" ? '<div class="muted" style="color:var(--ok)">✔ нейтрально</div>' : ""));
+}
+function scPreview() {                                        // лента «как увидит пациент»
+  const P = k => SC.report[k]?.preview ?? SC.templates[k];
+  const rows = [["Сразу после подтверждения", "first_notice"]]
+    .concat(SC.reminders.filter(r => r.action === "patient_message").map(r => [`Через ${r.after_hours} ч, если не записался`, r.template]))
+    .concat([["Если записался", "booked"], ["Если не пришёл на приём", "no_show"]]);
+  return rows.map(([when, k]) => { const bad = (SC.report[k]?.issues || []).length;   // ненейтральный черновик — красным
+    return `<div class="msg" style="${bad ? "border-color:var(--danger)" : ""}"><div class="muted">${esc(when)}${bad ? ' · <span class="err">не будет сохранено: текст не нейтральный</span>' : ""}</div>${esc(P(k))}</div>`; }).join("");
+}
+function scAct(i, v) { const r = SC.reminders[i]; r.action = v; if (v === "set_status") r.status = "not_engaged";
+  if (v === "patient_message" && !(r.channels || []).length) r.channels = ["lk", "push"]; if (v !== "set_status" && !r.template) r.template = "reminder_24h"; renderScenario(); scCheck(); }
+function scCh(i, c, on) { const r = SC.reminders[i]; r.channels = (r.channels || []).filter(x => x !== c).concat(on ? [c] : []); scCheck(); }
+function scAddStep() { const last = Math.max(0, ...SC.reminders.filter(r => r.action !== "set_status").map(r => r.after_hours));
+  const step = {after_hours: last + 24, action: "patient_message", template: "reminder_72h", channels: ["lk", "push"]};
+  const end = SC.reminders.findIndex(r => r.action === "set_status");
+  end < 0 ? SC.reminders.push(step) : SC.reminders.splice(end, 0, step); renderScenario(); scCheck(); }
+function scAddTpl() { const k = (prompt("Ключ нового текста (латиница, цифры и _), напр. reminder_120h:") || "").trim(); if (!k) return;
+  if (!/^[a-z0-9_]{2,40}$/.test(k)) return toast("Ключ: латиница, цифры и _"); if (SC.templates[k]) return toast("Такой текст уже есть");
+  SC.templates[k] = "Напоминаем о плановой консультации {specialist}. Выберите удобное время — очно или онлайн."; renderScenario(); scCheck(); }
+function scDelTpl(k) { if (SC.reminders.some(r => r.template === k)) return toast("Текст используется в лестнице — сначала уберите шаг");
+  delete SC.templates[k]; renderScenario(); scCheck(); }
+const scBody = () => ({templates: SC.templates, reminders: SC.reminders.map(r => ({after_hours: +r.after_hours, action: r.action,
+  template: r.template || "", channels: r.channels || [], status: r.status || ""}))});
+function scCheck() {                                          // проверка черновика на сервере (без сохранения), с задержкой
+  clearTimeout(scTimer);
+  scTimer = setTimeout(async () => {
+    const r = await fetch("/api/settings/scenario/preview", {method: "POST", headers: {"Content-Type": "application/json", ...AUTH()}, body: JSON.stringify(scBody())});
+    const j = await r.json();
+    if (!r.ok) { $("#scPreview").innerHTML = `<div class="err">${esc(j.detail)}</div>`; return; }
+    SC.report = j.report;
+    Object.keys(SC.templates).forEach(k => { const el = document.getElementById("rep-" + k); if (el) el.innerHTML = scRep(k); });
+    $("#scPreview").innerHTML = scPreview();
+  }, 500);
+}
+async function scSave() { await put("/api/settings/scenario", scBody()); toast("Сценарий сохранён"); loadScenario(); }
+async function scReset() { if (!confirm("Вернуть тексты и лестницу из routes.yaml?")) return; await del("/api/settings/scenario"); toast("Сценарий сброшен"); loadScenario(); }
+
+// роль при запуске и кабинет пациента
+let ROLE = null; try { ROLE = sessionStorage.getItem("cm_role"); } catch (e) {}
+let PAT = null;                                               // выбранный пациент (псевдо-ID)
+function chooseRole() { $("#roleBox").classList.remove("hidden"); }
+function setRole(r) {
+  ROLE = r; try { sessionStorage.setItem("cm_role", r); } catch (e) {}
+  $("#roleBox").classList.add("hidden");
+  document.body.classList.toggle("role-patient", r === "patient");
+  document.title = r === "patient" ? "Личный кабинет — маршрут обследования" : "Маршрут пациента — админ";
+  if (r === "patient") { document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-patient")); loadPatients(); }
+  else showTab("queue");
+}
+function openCabinet(pid) { PAT = pid; setRole("patient"); }
+async function loadPatients() {
+  const rows = await api("/api/patient/list");
+  if (!PAT || !rows.some(r => r.patient === PAT)) PAT = rows[0]?.patient || null;
+  $("#patSel").innerHTML = rows.map(r => `<option value="${esc(r.patient)}" ${r.patient === PAT ? "selected" : ""}>${esc(r.short)} · сообщений ${r.messages}${r.open ? " · ждёт записи" : ""}</option>`).join("")
+    || "<option>— пока никому ничего не отправлено —</option>";
+  loadCabinet();
+}
+let lastCab = "";
+async function loadCabinet(quiet = false) {
+  PAT = $("#patSel").value || PAT;
+  if (!PAT || PAT.startsWith("—")) { $("#cabinet").innerHTML = `<div class="card muted">Пациентам пока ничего не отправлено.
+    Зайдите как администратор, загрузите демо-данные и подтвердите маршрут (или включите автоотправку в «Настройках»).</div>`; return; }
+  const c = await api("/api/patient/" + encodeURIComponent(PAT) + "/cabinet");
+  const sig = JSON.stringify([PAT, c.messages.map(m => m.id), c.tasks.map(t => t.state + t.slot), pushOn()]);
+  if (quiet && sig === lastCab) return;                       // опрос: перерисовываем только если что-то изменилось
+  lastCab = sig;
+  const upcoming = c.tasks.flatMap(t => t.upcoming);
+  notifyNew(c);
+  $("#cabinet").innerHTML = `
+    <div class="calm">${esc(c.banner || (c.tasks.some(t => t.state === "booked") ? "Вы записаны на консультацию — ждём вас. Время можно изменить в любой момент."
+      : "Все шаги вашего маршрута обследования завершены. Спасибо, что заботитесь о своём здоровье!"))}</div>
+    <div class="grid" style="grid-template-columns:1fr 340px">
+     <div>
+      <div class="card"><h3>Мой маршрут</h3>
+        ${c.tasks.map(t => `<div class="step">
+          <div class="row" style="justify-content:space-between"><b>${esc(t.title)}</b><span class="tag ${t.state === "done" ? "ok" : t.state === "todo" ? "pending" : ""}">${esc(t.status)}${t.slot ? ": " + esc(t.slot) : ""}</span></div>
+          ${t.state === "todo" ? `<div class="muted" style="margin:8px 0 4px">Ближайшее свободное время:</div>
+            <div class="row">${t.slots.map(s => `<button class="btn small" ${c.can_act ? "" : "disabled"} onclick="patAct(${t.route_id},'book','${esc(s.label)}')">${esc(s.label)}</button>`).join("")}</div>
+            <div class="row" style="margin-top:8px"><button class="btn small" ${c.can_act ? "" : "disabled"} onclick="patAct(${t.route_id},'external')">Я уже был(а) у врача</button>
+              <button class="btn small" ${c.can_act ? "" : "disabled"} onclick="patAct(${t.route_id},'decline')">Не планирую</button></div>` : ""}
+          ${t.state === "booked" ? `<div class="row" style="margin-top:8px"><button class="btn small" ${c.can_act ? "" : "disabled"} onclick="patAct(${t.route_id},'cancel')">Отменить запись</button></div>` : ""}
+        </div>`).join("") || '<div class="muted">Шагов нет</div>'}
+        ${c.can_act ? "" : '<p class="muted">Боевой режим: здесь только просмотр, запись — в ЛК МИС.</p>'}
+      </div>
+      <div class="card"><h3>Уведомления в личном кабинете</h3>
+        ${c.messages.filter(m => m.channels.includes("lk")).map(m => `<div class="msg"><div class="muted">${fmtT(m.ts)}</div>${esc(m.text)}</div>`).join("") || '<div class="muted">Уведомлений нет</div>'}
+      </div>
+     </div>
+      <div class="card"><h3>Телефон пациента (заглушка)</h3>
+        ${phone(c)}
+        <div class="row" style="margin-top:10px;justify-content:center">
+          <button class="btn small" onclick="enablePush()">${pushOn() ? "Уведомления браузера включены" : "Включить уведомления браузера"}</button></div>
+        <p class="muted">Пуш и SMS здесь не отправляются: это заглушка. Кнопка выше показывает новые пуш-сообщения
+          системным уведомлением этого компьютера, без внешних сервисов.</p>
+      </div>
+    </div>
+    ${upcoming.length ? `<div class="demo-note"><b>Подсказка для демонстрации</b> (в настоящем кабинете этого блока нет): что придёт дальше, если не записаться.
+      Промотайте модельное время кнопками вверху.
+      ${upcoming.map(u => `<div class="msg"><div class="muted">${fmtT(u.at)} · ${esc(u.channels.map(x => CH[x] || x).join(", "))}</div>${esc(u.text)}</div>`).join("")}</div>` : ""}`;
+}
+function phone(c) {                                          // экран блокировки с пушами и SMS
+  const now = new Date(c.now);
+  const hm = now.toTimeString().slice(0, 5);
+  const date = now.toLocaleDateString("ru-RU", {weekday: "long", day: "numeric", month: "long"});
+  const ago = ts => fmtT(ts).slice(11);
+  return `<div class="phone"><div class="lock"><div class="time">${hm}</div><div class="date">${esc(date)}</div>
+      ${c.push.items.slice(0, 4).map(p => `<div class="push"><div class="app"><b>${esc(c.push.title)}</b><span>${ago(p.ts)}</span></div>${esc(p.body)}</div>`).join("")
+        || '<div style="text-align:center;opacity:.8;font-size:13px;margin-top:40px">Нет уведомлений</div>'}</div>
+    <div class="sms"><div class="muted">SMS · ${esc(c.push.title)}</div>
+      ${c.push.sms.map(m => `<div class="bubble">${esc(m.body)}<div class="muted" style="font-size:10.5px">${fmtT(m.ts)}</div></div>`).join("") || '<div class="muted" style="margin-top:8px">SMS не было</div>'}</div></div>`;
+}
+let lastPush = {};                                            // последний показанный пуш по каждому пациенту
+const pushOn = () => "Notification" in window && Notification.permission === "granted";
+async function enablePush() {
+  if (!("Notification" in window)) return toast("Браузер не поддерживает уведомления");
+  if (await Notification.requestPermission() === "granted") { toast("Новые пуш-сообщения пациенту появятся как уведомления"); loadCabinet(); }
+  else toast("Уведомления запрещены в настройках браузера");
+}
+function notifyNew(c) {                                       // системное уведомление о новых пушах (локально, без серверов)
+  const top = c.push.items[0]?.id || 0;
+  if (PAT in lastPush && top > lastPush[PAT] && pushOn())
+    c.push.items.filter(p => p.id > lastPush[PAT]).reverse().forEach(p => new Notification(c.push.title, {body: p.body, tag: "cm-" + p.id}));
+  lastPush[PAT] = top;
+}
+async function patAct(rid, action, slot = null) {
+  if (action === "decline" && !confirm("Отказаться от записи? Напоминаний больше не будет.")) return;
+  await post(`/api/patient/${encodeURIComponent(PAT)}/routes/${rid}/action`, {action, slot});
+  toast(action === "book" ? "Вы записаны" : "Готово"); loadPatients();
+}
+
+// пуши администратору (опрос раз в 3 сек)
+async function pollPush() {
+  if (ROLE !== "admin") return;                               // пациенту служебные пуши не показываем
+  const rows = await api("/api/notifications?kind=admin&limit=20");   // последние пуши админу
+  const fresh = rows.filter(n => n.id > lastAdminPush).reverse();     // новые
+  if (lastAdminPush) fresh.forEach(n => toast((n.channel === "staff_escalation" ? "🚨 " : n.channel === "admin_task" ? "📞 " : "🔔 ") + n.text));   // показываем новые
+  if (rows.length) lastAdminPush = Math.max(lastAdminPush, rows[0].id);   // запоминаем последний
+  $("#bellN").textContent = (await api("/api/routes?status=pending_verification")).length + (await api("/api/routes?status=escalated")).length;   // счётчик: что ждёт админа
+}
+
+async function refresh() {                                    // обновить всё видимое
+  await loadClock();
+  if (ROLE === "patient") return loadPatients();              // экран пациента
+  await loadQueue();                                          // очередь
+  if (current) openRoute(current);                            // карточка
+  if (!$("#tab-dash").classList.contains("hidden")) loadDash();   // дашборд, если открыт
+}
+if (ROLE === "admin" || ROLE === "patient") setRole(ROLE); else chooseRole();   // при запуске — выбор роли
+loadClock(); pollPush(); setInterval(pollPush, 3000);
+setInterval(() => { if (ROLE === "patient" && PAT) loadCabinet(true); }, 5000);   // новые сообщения пациенту
+</script>
+</body>
+</html>
